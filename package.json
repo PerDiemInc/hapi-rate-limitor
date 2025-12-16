@@ -1,9 +1,8 @@
 {
   "name": "@perdieminc/hapi-rate-limitor",
   "description": "Rate limiting for hapi/hapi.js to prevent brute-force attacks",
-  "version": "4.0.1",
+  "version": "4.0.2",
   "author": "Marcus Pöhls <marcus@futurestud.io>",
-
   "dependencies": {
     "@hapi/boom": "~10.0.1",
     "@supercharge/request-ip": "~1.2.0",
