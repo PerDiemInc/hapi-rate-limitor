@@ -10,8 +10,7 @@
 #   git push origin master --follow-tags
 #
 # Requirements:
-#   - Trusted Publisher (OIDC) configured on npm (✅ Already set up!)
-#   - No NPM_TOKEN needed - authentication is automatic via OIDC
+#   - Trusted Publisher (OIDC) configured on npm
 
 name: Publish to NPM
 
