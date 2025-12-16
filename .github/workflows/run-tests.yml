@@ -3,7 +3,7 @@ name: Run tests
 on:
   push:
     paths-ignore:
-      - 'README.md'
+      - "README.md"
 
 concurrency:
   # the group name is composed of two elements:
@@ -18,28 +18,28 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [20.x, 22.x]
         redis-version: [6, 7]
 
     name: Node ${{ matrix.node-version }} - Redis ${{ matrix.redis-version }}
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v4
-      with:
-        node-version: ${{ matrix.node-version }}
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
 
-    - name: Start Redis
-      uses: supercharge/redis-github-action@1.1.0
-      with:
-        redis-version: ${{ matrix.redis-version }}
+      - name: Start Redis
+        uses: supercharge/redis-github-action@1.1.0
+        with:
+          redis-version: ${{ matrix.redis-version }}
 
-    - name: Install dependencies
-      run: npm install
+      - name: Install dependencies
+        run: npm install
 
-    - name: Run tests
-      run: npm test
-      env:
-        CI: true
+      - name: Run tests
+        run: npm test
+        env:
+          CI: true
