@@ -2,17 +2,16 @@
 #
 # This workflow automatically:
 # 1. Runs when you push a version tag (e.g., v4.0.1, v4.1.0)
-# 2. Installs dependencies and runs tests
-# 3. Publishes the package to npm registry
-# 4. Creates a GitHub Release with auto-generated release notes
+# 2. Publishes the package to npm registry using Trusted Publisher (OIDC)
+# 3. Creates a GitHub Release with auto-generated release notes
 #
 # How to trigger:
 #   npm version patch  # Bumps version and creates tag
 #   git push origin master --follow-tags
 #
 # Requirements:
-#   - NPM_TOKEN secret must be added to repository secrets
-#   - GITHUB_TOKEN is automatically provided (no setup needed)
+#   - Trusted Publisher (OIDC) configured on npm (✅ Already set up!)
+#   - No NPM_TOKEN needed - authentication is automatic via OIDC
 
 name: Publish to NPM
 
@@ -45,8 +44,6 @@ jobs:
 
       - name: Publish to NPM
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
