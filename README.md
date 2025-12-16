@@ -461,23 +461,41 @@ This plugin uses:
 
 When you're ready to release a new version:
 
-1. **Update the version** in `package.json`:
+1. **Update version and create tag** (automatically):
    ```bash
    npm version patch  # For bug fixes (4.0.1 -> 4.0.2)
    npm version minor  # For new features (4.0.1 -> 4.1.0)
    npm version major  # For breaking changes (4.0.1 -> 5.0.0)
    ```
+   This automatically updates `package.json`, creates a commit, and creates a git tag.
 
-2. **Create and push a git tag**:
+2. **Push the tag** (triggers automatic publish):
    ```bash
-   git tag -a v4.0.1 -m "Release v4.0.1 - Enhanced Redis Support"
-   git push origin v4.0.1
+   git push origin master --follow-tags
    ```
 
-3. **Publish to npm** (if applicable):
-   ```bash
-   npm publish --access public
-   ```
+3. **GitHub Actions automatically**:
+   - ✅ Runs all tests
+   - ✅ Publishes to npm
+   - ✅ Creates a GitHub Release with auto-generated notes
+
+#### Manual Release (if needed)
+
+If you need to publish manually without the automation:
+
+```bash
+npm publish --access public
+```
+
+#### Delete a Tag (if you made a mistake)
+
+```bash
+# Delete local tag
+git tag -d v4.0.2
+
+# Delete remote tag
+git push origin --delete v4.0.2
+```
 
 ### Syncing with Upstream
 
