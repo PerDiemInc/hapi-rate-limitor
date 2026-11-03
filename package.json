@@ -1,82 +1,48 @@
 {
   "name": "@perdieminc/hapi-rate-limitor",
-  "description": "Rate limiting for hapi/hapi.js to prevent brute-force attacks",
   "version": "4.0.2",
-  "author": "Marcus Pöhls <marcus@futurestud.io>",
-  "dependencies": {
-    "@hapi/boom": "~10.0.1",
-    "@supercharge/request-ip": "~1.2.0",
-    "async-ratelimiter": "~1.6.1",
-    "ioredis": "~5.8.0"
-  },
-  "devDependencies": {
-    "@hapi/basic": "~7.0.2",
-    "@hapi/hapi": "~21.4.0",
-    "@hapi/vision": "~7.0.3",
-    "ava": "~5.3.0",
-    "eslint": "~8.57.0",
-    "eslint-config-standard": "~17.1.0",
-    "eslint-plugin-import": "~2.32.0",
-    "eslint-plugin-node": "~11.1.0",
-    "eslint-plugin-promise": "~6.6.0",
-    "eslint-plugin-standard": "~5.0.0",
-    "handlebars": "~4.7.8",
-    "nyc": "~17.1.0",
-    "p-event": "~4.2.0"
-  },
-  "engines": {
-    "node": ">=18"
-  },
-  "homepage": "https://github.com/perdieminc/hapi-rate-limitor#readme",
-  "husky": {
-    "hooks": {
-      "pre-push": "npm run lint"
-    }
-  },
-  "keywords": [
-    "brute force",
-    "brute force protection",
-    "bruteforce",
-    "hapi",
-    "hapi.js",
-    "hapijs",
-    "limit",
-    "plugin",
-    "rate",
-    "rate limit",
-    "rate limiter",
-    "rate limiting",
-    "rate-limit",
-    "hapi-plugin",
-    "api-rate-limit",
-    "brute-force",
-    "brute-force-protection",
-    "ddos-protection",
-    "redis",
-    "redis-cluster",
-    "ioredis",
-    "api-security",
-    "security",
-    "middleware",
-    "authentication",
-    "throttle",
-    "throttling",
-    "request-limit",
-    "ip-rate-limit",
-    "user-rate-limit"
-  ],
+  "description": "Zero-dependency Redis-backed rate limiting for hapi that keeps your API up when Redis is not",
   "license": "MIT",
-  "main": "lib/index.js",
-  "types": "typings",
+  "author": "Per Diem",
   "repository": {
     "type": "git",
-    "url": "https://github.com/PerDiemInc/hapi-rate-limitor"
+    "url": "git+https://github.com/PerDiemInc/hapi-rate-limitor.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22"
   },
   "scripts": {
-    "coverage": "npm test",
-    "lint": "eslint **/*.js",
-    "lint:fix": "eslint **/*.js --fix",
-    "test": "nyc ava",
-    "test:single": "ava --match"
-  }
+    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "lint": "biome check . && tsc --noEmit -p tsconfig.json",
+    "pretest": "npm run build",
+    "test": "node --test --experimental-test-coverage --test-coverage-include='dist/**' --test-coverage-lines=95 --test-concurrency=1 test/*.test.js",
+    "prepublishOnly": "npm run build",
+    "format": "biome check --write ."
+  },
+  "keywords": [
+    "hapi",
+    "hapi-plugin",
+    "rate-limit",
+    "rate-limiter",
+    "redis",
+    "valkey",
+    "brute-force",
+    "cloudfront"
+  ],
+  "peerDependencies": {
+    "@hapi/hapi": "^21.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "@hapi/hapi": "^21.4.12",
+    "@types/node": "^24.0.0",
+    "ioredis": "^6.0.0",
+    "typescript": "^5.9.0"
+  },
+  "homepage": "https://github.com/PerDiemInc/hapi-rate-limitor#readme"
 }

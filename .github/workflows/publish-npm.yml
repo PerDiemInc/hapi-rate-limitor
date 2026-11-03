@@ -1,53 +1,71 @@
-# Automated NPM Publishing and GitHub Release Workflow
-#
-# This workflow automatically:
-# 1. Runs when you push a version tag (e.g., v4.0.1, v4.1.0)
-# 2. Publishes the package to npm registry using Trusted Publisher (OIDC)
-# 3. Creates a GitHub Release with auto-generated release notes
-#
-# How to trigger:
-#   npm version patch  # Bumps version and creates tag
+# Publishes to npm when a version tag is pushed:
+#   npm version patch
 #   git push origin master --follow-tags
 #
-# Requirements:
-#   - Trusted Publisher (OIDC) configured on npm
+# Requires a Trusted Publisher (OIDC) for this repository on npm and an
+# "npm-publish" GitHub environment.
 
-name: Publish to NPM
+name: Publish
 
 on:
   push:
     tags:
-      - "v*" # Triggers on version tags like v4.0.1, v4.1.0, etc.
+      - "v*"
+
+permissions:
+  contents: read
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm audit
+      - run: npm test
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
 
     permissions:
       contents: write
       id-token: write
+
     environment:
       name: npm-publish
       url: https://www.npmjs.com/package/@perdieminc/hapi-rate-limitor
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: "22.20.0"
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
           registry-url: "https://registry.npmjs.org"
 
-      - name: Update npm
-        run: npm install -g npm@latest
-      - name: Publish to NPM
-        run: npm publish
+      # Trusted publishing needs npm 11.5.1 or later. This job can publish, so stay on one major.
+      - run: npm install -g npm@11
+      - run: npm ci --ignore-scripts
+      - run: npm publish
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true
-          draft: false
-          prerelease: false
