@@ -246,7 +246,7 @@ Version 5 is a full rewrite and requires Node.js 22 or later.
 | Rejected requests kept a client blocked | `countRejected: true` keeps that behaviour                                                                                                                                          |
 | Redis failure: 500 on every request     | `onStoreError`, default `local`                                                                                                                                                     |
 
-**Use a new `namespace`.** Keys aren't compatible with 4.x. Counters reset once at deploy.
+**Counters reset once at deploy.** 5.x doesn't read keys written by 4.x, and old keys expire on their own, so you don't need to clean up or change `namespace`.
 
 ## Development
 

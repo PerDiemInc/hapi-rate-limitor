@@ -521,3 +521,34 @@ test("earlyLimit honors skip and the allowlist", async () => {
   );
   assert.deepEqual(await statuses(server, times(2, "/")), [200, 429]);
 });
+
+test("key parts are encoded, so different values never share a counter", async () => {
+  const ns = namespace();
+  const route = (path) => ({
+    method: "GET",
+    path,
+    options: { plugins: { "hapi-rate-limitor": { max: 1 } } },
+    handler: () => "ok",
+  });
+  const routeKeys = { "/a": "x:y", "/b": "x%3Ay" };
+  const server = await createServer(
+    { redis, namespace: ns, getRouteKey: (request) => routeKeys[request.path] },
+    [route("/a"), route("/b")],
+  );
+
+  assert.deepEqual(await statuses(server, ["/a", "/b", "/a", "/b"]), [200, 200, 429, 429]);
+
+  const keys = await redis.keys(`${ns}:*`);
+
+  assert.equal(keys.length, 2);
+
+  for (const key of keys) {
+    const parts = key.slice(ns.length + 1).split(":");
+
+    assert.equal(parts.length, 4, key);
+    assert.match(parts[0], /^\{ip%3A.+\}$/);
+  }
+
+  assert.ok(keys.some((key) => key.includes(":x%3Ay:")));
+  assert.ok(keys.some((key) => key.includes(":x%253Ay:")));
+});

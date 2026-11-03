@@ -53,11 +53,14 @@ const STORE_RETRY_AFTER_SECONDS = 1;
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
-/** Keeps keys bounded and clear of Redis hash tag syntax, whatever a client sends. */
+/**
+ * Keeps keys bounded and clear of Redis hash tag syntax, whatever a client sends. Encoding
+ * `%` and `:` means the parts of a key can't run together and match another client's key.
+ */
 function safeKeyPart(value: string): string {
   return value.length > MAX_IDENTITY_LENGTH || /[{}\s]/.test(value)
     ? `sha256-${sha256(value)}`
-    : value;
+    : value.replaceAll("%", "%25").replaceAll(":", "%3A");
 }
 
 function buildAllowlist(entries: string[]): BlockList {
