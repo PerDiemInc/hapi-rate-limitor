@@ -235,10 +235,10 @@ Every limited response has `X-Rate-Limit-Limit`, `X-Rate-Limit-Remaining` and `X
 
 Version 5 is a full rewrite and requires Node.js 22 or later.
 
-| 4.x                     | 5.x                                                                                                                                                                        |
+| 4.x                                     | 5.x                                                                                                                                                                                 |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `redis: 'redis://...'`                  | `redis: new Redis(url, { enableOfflineQueue: false, maxRetriesPerRequest: 1 })`                                                                                                     |
-| Route options under `hapi-rate-limitor` | Unchanged |
+| Route options under `hapi-rate-limitor` | Unchanged                                                                                                                                                                           |
 | Route counter per URL                   | `getRouteKey: (request) => request.path` keeps that behaviour, but clients can vary the URL to get new counters. Use it only where you need to, and override it on sensitive routes |
 | Client IP from any forwarding header    | Set `ipSources` or `getIp`                                                                                                                                                          |
 | `ipWhitelist`                           | `allowlist`                                                                                                                                                                         |
