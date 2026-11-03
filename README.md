@@ -1,353 +1,217 @@
 # @perdieminc/hapi-rate-limitor
 
-[![NPM Version](https://img.shields.io/npm/v/@perdieminc/hapi-rate-limitor.svg?style=flat-square)](https://www.npmjs.com/package/@perdieminc/hapi-rate-limitor)
-[![Node.js Version](https://img.shields.io/node/v/@perdieminc/hapi-rate-limitor.svg?style=flat-square)](https://nodejs.org)
+Rate limiting for [hapi](https://hapi.dev), backed by Redis or Valkey. It has no runtime dependencies, and a Redis outage doesn't take your API down with it.
 
-A powerful rate limiting plugin for hapi.js that helps prevent brute-force attacks and API abuse.
+## What it does
 
-## Features
+- **Exact sliding windows.** Allows exactly `max` requests in any `duration`, even under concurrent load, across all your servers. It uses Redis' clock, so server clock drift doesn't matter.
+- **Stays up when Redis doesn't.** Each request waits at most `storeTimeoutMs`, then the `onStoreError` policy decides what happens. During an outage a circuit breaker lets one request test Redis at a time, so the rest don't wait.
+- **Stops SMS pumping and enumeration.** A route can apply several limits at once: per client, per phone number, per number prefix and per store. They're all-or-nothing, so a rejected request spends nothing.
+- **Limits failed logins.** `authFailures` locks out a client after repeated 401s, before authentication runs again.
+- **Cheap under attack.** Rejected clients are remembered in memory, so a flood doesn't reach Redis.
+- **Works on Redis Cluster.** Keys for one request share a slot, and hostile values can't change the key layout.
 
-- 🚀 **Custom Redis Support**: Works with both standard Redis instances and Redis Cluster
-- 🔒 **Flexible Rate Limiting**: Global, route-specific, and user-specific limits
-- 🎯 **IP-based & User-based**: Rate limit by IP address or authenticated user
-- 📊 **Response Headers**: Automatic rate limit headers (`X-Rate-Limit-*`)
-- 🎨 **Custom Views**: Render custom views when rate limit is exceeded
-- ⚡ **Event Emitters**: Hook into rate limiting events
-- 🔧 **Highly Configurable**: Whitelist IPs, skip routes, custom extension points
+## Install
 
-## Requirements
-
-- **Node.js**: >= 18
-- **hapi**: >= 21
-- **Redis**: A running Redis instance or Redis Cluster
-
-## Installation
-
-```bash
+```sh
 npm install @perdieminc/hapi-rate-limitor
 ```
 
-## Quick Start
+You provide the Redis client, so this package doesn't add one to your dependencies. It supports `ioredis` 5 and 6, on Redis 5 or later and on Valkey.
 
-```javascript
-const Hapi = require('@hapi/hapi');
+## Usage
 
-const server = new Hapi.Server({
-  port: 3000
+```js
+const Redis = require("ioredis");
+const { plugin: rateLimit } = require("@perdieminc/hapi-rate-limitor");
+
+const redis = new Redis(process.env.REDIS_URL, {
+  // Fail straight away during an outage rather than queueing requests.
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 1,
 });
+
+// Without a listener, ioredis logs every reconnect failure to stderr.
+redis.on("error", (error) => logger.warn({ err: error }, "rate limit redis error"));
 
 await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: 'redis://localhost:6379',
-    max: 60,                    // 60 requests
-    duration: 60 * 1000,        // per 60 seconds
-    namespace: 'my-app-limiter'
-  }
+  plugin: rateLimit,
+  options: { redis, max: 120, duration: 60_000 },
 });
 
-await server.start();
+server.ext("onPostStop", () => redis.quit());
 ```
 
-## Redis Configuration
+Use one client for rate limiting, not your application's shared client. Options like `enableOfflineQueue` would otherwise affect the rest of your app.
 
-### Standard Redis Instance
+## Route limits
 
-The plugin supports multiple ways to configure a standard Redis connection:
-
-#### Connection String
-
-```javascript
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: 'redis://localhost:6379'
-  }
-});
-```
-
-#### Configuration Object
-
-```javascript
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: {
-      host: 'localhost',
-      port: 6379,
-      password: 'your-password',
-      db: 0
-    }
-  }
-});
-```
-
-### Custom Redis Instance
-
-You can pass your own pre-configured Redis instance (useful for connection pooling or custom configurations):
-
-```javascript
-const Redis = require('ioredis');
-
-const redis = new Redis({
-  host: 'localhost',
-  port: 6379,
-  password: 'your-password',
-  retryStrategy: (times) => {
-    return Math.min(times * 50, 2000);
-  }
-});
-
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: redis  // Pass your custom Redis instance
-  }
-});
-```
-
-### Redis Cluster Support
-
-The plugin fully supports Redis Cluster configurations:
-
-```javascript
-const Redis = require('ioredis');
-
-const cluster = new Redis.Cluster([
-  { host: 'localhost', port: 7000 },
-  { host: 'localhost', port: 7001 },
-  { host: 'localhost', port: 7002 }
-], {
-  redisOptions: {
-    password: 'your-cluster-password'
-  }
-});
-
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: cluster  // Pass your Redis Cluster instance
-  }
-});
-```
-
-> **Note**: When passing a custom Redis instance or cluster, the plugin will **not** automatically connect or disconnect. You are responsible for managing the connection lifecycle.
-
-## Configuration Options
-
-### Plugin Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `enabled` | Boolean | `true` | Enable/disable rate limiting globally |
-| `redis` | String/Object/Redis | **required** | Redis connection string, config object, or Redis instance |
-| `max` | Number | `60` | Maximum number of requests allowed |
-| `duration` | Number | `60000` | Time window in milliseconds (default: 60 seconds) |
-| `namespace` | String | `'hapi-rate-limitor'` | Redis key namespace |
-| `userAttribute` | String | `'id'` | User identifier attribute in `request.auth.credentials` |
-| `userLimitAttribute` | String | `'rateLimit'` | User-specific rate limit attribute |
-| `ipWhitelist` | Array | `[]` | Array of whitelisted IP addresses |
-| `extensionPoint` | String | `'onPostAuth'` | Hapi extension point for rate limiting |
-| `view` | String | `undefined` | Path to custom view for rate limit exceeded |
-| `skip` | Function | `() => false` | Function to skip rate limiting for specific requests |
-| `getIp` | Function | `undefined` | Custom function to extract IP address |
-
-## Usage Examples
-
-### Basic Rate Limiting
-
-```javascript
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: 'redis://localhost:6379',
-    max: 100,                   // 100 requests
-    duration: 60 * 1000,        // per minute
-    namespace: 'my-api'
-  }
-});
-```
-
-### Route-Specific Limits
-
-You can set different rate limits for specific routes:
-
-```javascript
+```js
 server.route({
-  method: 'POST',
-  path: '/login',
+  method: "POST",
+  path: "/otp",
   options: {
     plugins: {
-      'hapi-rate-limitor': {
-        max: 5,                 // Only 5 login attempts
-        duration: 5 * 60 * 1000 // per 5 minutes
-      }
+      "hapi-rate-limitor": {
+        max: 5,
+        duration: 10 * 60_000,
+        // Once exceeded, reject for 30 minutes.
+        blockMs: 30 * 60_000,
+        // Refuse rather than send SMS unprotected if Redis is down.
+        onStoreError: "closed",
+      },
     },
-    handler: async (request, h) => {
-      return { success: true };
-    }
-  }
-});
-```
-
-### Disable Rate Limiting for Specific Routes
-
-```javascript
-server.route({
-  method: 'GET',
-  path: '/health',
-  options: {
-    plugins: {
-      'hapi-rate-limitor': {
-        enabled: false  // No rate limiting for health checks
-      }
-    },
-    handler: async (request, h) => {
-      return { status: 'ok' };
-    }
-  }
-});
-```
-
-### IP Whitelist
-
-```javascript
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: 'redis://localhost:6379',
-    ipWhitelist: [
-      '127.0.0.1',
-      '::1',
-      '10.0.0.0/8'  // Internal network
-    ]
-  }
-});
-```
-
-### User-Specific Rate Limits
-
-For authenticated users, you can set per-user rate limits:
-
-```javascript
-// In your authentication handler
-request.auth.credentials = {
-  id: 'user-123',
-  rateLimit: 1000  // This user gets 1000 requests per duration
-};
-```
-
-### Custom View for Rate Limit Exceeded
-
-```javascript
-await server.register([
-  {
-    plugin: require('@hapi/vision')
+    handler,
   },
+});
+```
+
+A route with its own limit has its own counter per client, shared across all its parameter values. Routes without one share the plugin-wide counter.
+
+### Stopping SMS pumping
+
+IP limits alone don't stop SMS pumping, because attackers rotate through many IPs. Limit the things they can't rotate as cheaply:
+
+```js
+'hapi-rate-limitor': {
+  onStoreError: 'closed',
+  limits: [
+    // Per client
+    { max: 5, duration: 10 * 60_000 },
+    // Per destination number. Normalize first, so formats can't make new counters.
+    { max: 3, duration: 10 * 60_000, by: (request) => normalizePhone(request.payload?.phone) },
+    // Per number range, which catches rented premium-rate blocks
+    { max: 20, duration: 60 * 60_000, by: (request) => normalizePhone(request.payload?.phone)?.slice(0, 7) },
+    // Per merchant, as a spend cap
+    { max: 500, duration: 60 * 60_000, by: (request) => request.params.store_id }
+  ]
+}
+```
+
+`by` values are hashed before they reach Redis, so phone numbers and emails aren't stored. A missing value counts by client, so it can't skip the limit. The payload is parsed by `onPostAuth`, so don't combine `by` on payload fields with an earlier `extensionPoint`.
+
+Use `by` only on values that are validated, or that clients can't invent freely. Each distinct value creates a Redis key until its window ends. On Redis Cluster, a route using `by` keeps all its counters on one slot.
+
+### Counting real sends
+
+Route limits count requests, so junk requests can use up a shared budget and block real customers. Count country, merchant and global budgets where the message is actually sent:
+
+```js
+const rateLimit = server.plugins["hapi-rate-limitor"];
+const result = await rateLimit.consume({
+  key: `sms:country:${country}`,
+  limits: [{ max: 1000, duration: 60 * 60_000 }],
+  onStoreError: "closed",
+});
+
+if (!result.isInQuota()) {
+  // Don't send. Alert someone, because a global cap can block real customers too.
+}
+```
+
+`consume` returns `null` under the `open` policy or when the plugin is disabled, and rejects with an error during a store failure under `closed`. Pass `peek: true` to check a budget without counting, for example before paying for a phone lookup.
+
+### Failed logins
+
+Limits run after authentication by default, and hapi skips that step when authentication fails. So normal limits never see failed logins. Use `authFailures`:
+
+```js
+'hapi-rate-limitor': { authFailures: { max: 5, duration: 15 * 60_000 } }
+```
+
+Or set it in the plugin options to cover every route. It counts by client IP, per route.
+
+Each attempt takes a slot before authentication and gives it back if it doesn't fail, so a burst of parallel guesses can't get past the cap. That means more than `max` simultaneous logins from one IP are briefly rejected, even if they would all succeed.
+
+### Rejecting before the expensive work
+
+Normal limits run after routing, authentication, body parsing and validation, and requests that fail those steps are never counted. `earlyLimit` runs first and counts everything per client IP:
+
+```js
+await server.register({
+  plugin: rateLimit,
+  options: {
+    redis,
+    earlyLimit: { max: 600, duration: 60_000 },
+    // Keep health checks independent of the limiter.
+    skip: (request) => request.path === "/health",
+  },
+});
+```
+
+Route options aren't available this early, so `enabled: false` on a route doesn't exempt it. `getIp` and `skip` run here before authentication, so they can't read credentials.
+
+## Client IP
+
+By default the client address comes from `CloudFront-Viewer-Address`, and then the socket. **Only use the default if clients can't reach the server without going through CloudFront.** Anyone connecting directly can send that header and choose their identity, which evades IP limits and can match `allowlist`.
+
+If the server is also directly reachable, guard the source:
+
+```js
+ipSources: [
   {
-    plugin: require('@perdieminc/hapi-rate-limitor'),
-    options: {
-      redis: 'redis://localhost:6379',
-      view: 'rate-limit-exceeded'  // Render this view when exceeded
-    }
-  }
-]);
-
-server.views({
-  engines: { html: require('handlebars') },
-  path: 'views'
-});
+    header: "cloudfront-viewer-address",
+    hasPort: true,
+    when: (request) => isFromCloudFront(request),
+  },
+];
 ```
 
-### Skip Rate Limiting Conditionally
+| Setup                                               | `ipSources`                                          |
+| --------------------------------------------------- | ---------------------------------------------------- |
+| CloudFront only                                     | The default                                          |
+| One load balancer that appends to `X-Forwarded-For` | `[{ forwardedForHops: 1 }]`                          |
+| CloudFront, then a load balancer                    | `[{ forwardedForHops: 2 }]`                          |
+| A trusted internal caller forwards the address      | `[{ header: 'x-client-ip', when: isTrustedCaller }]` |
+| Directly on the internet                            | `[]`                                                 |
 
-```javascript
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: 'redis://localhost:6379',
-    skip: (request) => {
-      // Skip rate limiting for admin users
-      return request.auth.credentials?.role === 'admin';
-    }
-  }
-});
-```
+Hop counts must be exact. Too low and clients share the proxy's limit; too high and clients can pick their own key. Never read the first `X-Forwarded-For` entry, because clients control it.
 
-### Custom IP Detection
+IPv6 clients are counted per /64, because one customer usually controls a whole /64.
 
-```javascript
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: 'redis://localhost:6379',
-    getIp: (request) => {
-      // Custom IP extraction (e.g., behind a proxy)
-      return request.headers['x-real-ip'] ||
-             request.headers['x-forwarded-for']?.split(',')[0] ||
-             request.info.remoteAddress;
-    }
-  }
-});
-```
+## When Redis is unavailable
 
-### Custom Extension Point
+| `onStoreError`    | Behaviour                                    | Use for                               |
+| ----------------- | -------------------------------------------- | ------------------------------------- |
+| `local` (default) | Limits per server process, in memory         | Most routes                           |
+| `open`            | Allows requests, sends no rate limit headers | Routes that must never be blocked     |
+| `closed`          | Answers 503 with `Retry-After`               | SMS, payments and other costly routes |
 
-```javascript
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: 'redis://localhost:6379',
-    extensionPoint: 'onPreAuth'  // Rate limit before authentication
-  }
-});
-```
+With `local`, the effective limit is `max` times your number of server processes until Redis returns.
 
-## Rate Limit Events
+## Options
 
-The plugin emits events that you can listen to:
+| Option               | Default                  | Description                                                                                                                                     |
+| -------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `redis`              | Required                 | An `ioredis` client or cluster. You own its connection and lifecycle                                                                            |
+| `max`                | `60`                     | Requests per `duration`                                                                                                                         |
+| `duration`           | `60000`                  | Window in milliseconds                                                                                                                          |
+| `blockMs`            |                          | Once exceeded, keep rejecting for this long                                                                                                     |
+| `countRejected`      | `false`                  | Count rejected requests, so a client stays limited until it backs off                                                                           |
+| `enabled`            | `true`                   | `false` turns the plugin off                                                                                                                    |
+| `namespace`          | `rate-limit`             | Prefix for Redis keys                                                                                                                           |
+| `extensionPoint`     | `onPostAuth`             | Lifecycle step that applies limits                                                                                                              |
+| `userAttribute`      | `id`                     | Credentials property identifying a user                                                                                                         |
+| `userLimitAttribute` | `rateLimit`              | Credentials property holding a user's own `max`                                                                                                 |
+| `routeOptionKey`     | `hapi-rate-limitor`      | Key under `route.options.plugins`                                                                                                               |
+| `ipSources`          | CloudFront header        | Where to read the client address, in order                                                                                                      |
+| `getIp`              |                          | Replaces `ipSources`. An empty result uses the socket address                                                                                   |
+| `allowlist`          | `[]`                     | IP addresses or CIDR ranges that skip limits                                                                                                    |
+| `skip`               |                          | `(request) => boolean` to skip limits                                                                                                           |
+| `getRouteKey`        | Method and path template | Identifies the counter for routes with their own limit                                                                                          |
+| `emitter`            | Server events            | Where to send events                                                                                                                            |
+| `onExceeded`         | 429 JSON                 | `(request, h, rateLimit) => response`                                                                                                           |
+| `onStoreError`       | `local`                  | See above                                                                                                                                       |
+| `storeTimeoutMs`     | `250`                    | Longest a request waits for Redis                                                                                                               |
+| `shield`             | `true`                   | Remember rejected clients in memory. Turn off if you delete keys to unblock clients, because servers keep rejecting until the retry time passes |
+| `authFailures`       |                          | `{ max, duration, statusCodes }`. `statusCodes` defaults to `[401]`                                                                             |
+| `earlyLimit`         |                          | `{ max, duration, blockMs }`. Limits per client IP before routing and authentication                                                            |
 
-```javascript
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    redis: 'redis://localhost:6379',
-    emitter: {
-      on: (event, callback) => {
-        if (event === 'rate-limit:exceeded') {
-          callback((request) => {
-            console.log(`Rate limit exceeded for ${request.info.remoteAddress}`);
-          });
-        }
+Invalid route options fail at server start. Routes accept `enabled`, `max`, `duration`, `blockMs`, `countRejected`, `limits`, `onStoreError`, `authFailures` and `getRouteKey`. Precedence for `max` is route, then the user's own limit, then the plugin default.
 
-        if (event === 'rate-limit:in-quota') {
-          callback((request) => {
-            console.log(`Request within quota: ${request.path}`);
-          });
-        }
-      }
-    }
-  }
-});
-```
+## Responses
 
-## Response Headers
-
-The plugin automatically adds rate limit headers to all responses:
-
-```
-X-Rate-Limit-Limit: 60
-X-Rate-Limit-Remaining: 59
-X-Rate-Limit-Reset: 1639584000
-```
-
-- `X-Rate-Limit-Limit`: Maximum number of requests allowed
-- `X-Rate-Limit-Remaining`: Number of requests remaining in the current window
-- `X-Rate-Limit-Reset`: Unix timestamp (in seconds) when the rate limit resets
-
-## Error Response
-
-When the rate limit is exceeded, the plugin returns a `429 Too Many Requests` response:
+Every limited response has `X-Rate-Limit-Limit`, `X-Rate-Limit-Remaining` and `X-Rate-Limit-Reset` (epoch seconds). Rejected responses add `Retry-After`. `request.rateLimit` holds the same values.
 
 ```json
 {
@@ -357,154 +221,45 @@ When the rate limit is exceeded, the plugin returns a `429 Too Many Requests` re
 }
 ```
 
-## Advanced Configuration
+## Events
 
-### Complete Example with All Options
+`rate-limit:attempt`, `rate-limit:in-quota` and `rate-limit:exceeded` receive the request. `rate-limit:store-error` receives the error. A failing listener is logged and doesn't affect the request.
 
-```javascript
-const Redis = require('ioredis');
+## Limits of this package
 
-const redis = new Redis.Cluster([
-  { host: 'redis-node-1', port: 7000 },
-  { host: 'redis-node-2', port: 7001 },
-  { host: 'redis-node-3', port: 7002 }
-]);
+- **It isn't DDoS protection on its own.** Requests still reach your servers. Use a WAF for volumetric attacks.
+- **It limits rate, not concurrency or cost.** A slow route costs the same as a fast one, and open streams aren't capped.
+- **Memory.** Each client's log holds at most `max` entries, for `duration`. Very high limits across many clients use more Redis memory.
 
-await server.register({
-  plugin: require('@perdieminc/hapi-rate-limitor'),
-  options: {
-    enabled: true,
-    redis: redis,
-    max: 100,
-    duration: 60 * 1000,
-    namespace: 'my-app-rate-limiter',
-    userAttribute: 'userId',
-    userLimitAttribute: 'maxRequests',
-    ipWhitelist: ['127.0.0.1', '::1'],
-    extensionPoint: 'onPostAuth',
-    view: 'rate-limit-exceeded',
-    skip: (request) => {
-      return request.path.startsWith('/public');
-    },
-    getIp: (request) => {
-      return request.headers['x-forwarded-for']?.split(',')[0] ||
-             request.info.remoteAddress;
-    }
-  }
-});
-```
+## Upgrading from 4.x
 
-## TypeScript Support
+Version 5 is a full rewrite and requires Node.js 22 or later.
 
-The plugin includes TypeScript definitions:
+| 4.x                     | 5.x                                                                                                                                                                        |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `redis: 'redis://...'`                  | `redis: new Redis(url, { enableOfflineQueue: false, maxRetriesPerRequest: 1 })`                                                                                                     |
+| Route options under `hapi-rate-limitor` | Unchanged |
+| Route counter per URL                   | `getRouteKey: (request) => request.path` keeps that behaviour, but clients can vary the URL to get new counters. Use it only where you need to, and override it on sensitive routes |
+| Client IP from any forwarding header    | Set `ipSources` or `getIp`                                                                                                                                                          |
+| `ipWhitelist`                           | `allowlist`                                                                                                                                                                         |
+| `view`                                  | `onExceeded`                                                                                                                                                                        |
+| Rejected requests kept a client blocked | `countRejected: true` keeps that behaviour                                                                                                                                          |
+| Redis failure: 500 on every request     | `onStoreError`, default `local`                                                                                                                                                     |
 
-```typescript
-import { Server } from '@hapi/hapi';
-import * as RateLimitor from '@perdieminc/hapi-rate-limitor';
+**Use a new `namespace`.** Keys aren't compatible with 4.x. Counters reset once at deploy.
 
-const server = new Server({ port: 3000 });
+## Development
 
-await server.register({
-  plugin: RateLimitor,
-  options: {
-    redis: 'redis://localhost:6379',
-    max: 60,
-    duration: 60000
-  }
-});
-```
-
-## Testing
-
-```bash
+```sh
+docker run -d -p 6379:6379 redis:7
+npm run lint
 npm test
 ```
 
-## License
-
-MIT © [Marcus Pöhls](https://futurestud.io)
-
-## Acknowledgments
-
-This package is a fork of the [hapi-rate-limitor](https://github.com/futurestudio/hapi-rate-limitor) created by [Marcus Pöhls](https://github.com/marcuspoehls) and the [Future Studio](https://futurestud.io) team.
-
-**Original Repository**: [futurestudio/hapi-rate-limitor](https://github.com/futurestudio/hapi-rate-limitor)
-
-We are grateful for their work and contributions to the hapi.js ecosystem. This fork maintains compatibility with the original while adding enhanced documentation and examples, particularly around Redis Cluster support.
-
-If you find this package useful, please consider:
-- ⭐ Starring the [original repository](https://github.com/futurestudio/hapi-rate-limitor)
-- 💖 Supporting [Future Studio](https://futurestud.io)
-- 🤝 Contributing back improvements to the upstream project
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-For changes that could benefit the broader community, consider contributing to the [original repository](https://github.com/futurestudio/hapi-rate-limitor) as well.
-
 ## Credits
 
-This plugin uses:
-- [ioredis](https://github.com/luin/ioredis) for Redis connectivity
-- [async-ratelimiter](https://github.com/microlinkhq/async-ratelimiter) for rate limiting logic
-- [@supercharge/request-ip](https://github.com/supercharge/request-ip) for IP detection
+Written from scratch, with ideas from [hapi-rate-limitor](https://github.com/futurestudio/hapi-rate-limitor) by Future Studio, which this package replaces, and [rate-limiter-flexible](https://github.com/animir/node-rate-limiter-flexible).
 
----
+## License
 
-**Made with ❤️ for the hapi.js community**
-
-
-## Development & Release
-
-### Creating a New Release
-
-When you're ready to release a new version:
-
-1. **Update version and create tag** (automatically):
-   ```bash
-   npm version patch  # For bug fixes (4.0.1 -> 4.0.2)
-   npm version minor  # For new features (4.0.1 -> 4.1.0)
-   npm version major  # For breaking changes (4.0.1 -> 5.0.0)
-   ```
-   This automatically updates `package.json`, creates a commit, and creates a git tag.
-
-2. **Push the tag** (triggers automatic publish):
-   ```bash
-   git push origin master --follow-tags
-   ```
-
-3. **GitHub Actions automatically**:
-   - ✅ Runs all tests
-   - ✅ Publishes to npm
-   - ✅ Creates a GitHub Release with auto-generated notes
-
-#### Manual Release (if needed)
-
-If you need to publish manually without the automation:
-
-```bash
-npm publish --access public
-```
-
-#### Delete a Tag (if you made a mistake)
-
-```bash
-# Delete local tag
-git tag -d v4.0.2
-
-# Delete remote tag
-git push origin --delete v4.0.2
-```
-
-### Syncing with Upstream
-
-To get the latest updates from the original repository:
-
-```bash
-git fetch upstream
-git merge upstream/master
-git push origin master
-```
-
-See the [upstream repository](https://github.com/futurestudio/hapi-rate-limitor) for the latest changes.
+MIT

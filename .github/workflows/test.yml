@@ -1,0 +1,60 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+        server: ["redis:6", "redis:7", "valkey/valkey:8"]
+        client: ["ioredis@6"]
+        include:
+          - node: 24
+            server: "redis:5"
+            client: "ioredis@6"
+          - node: 24
+            server: "redis:7"
+            client: "ioredis@5"
+
+    name: Node ${{ matrix.node }} - ${{ matrix.server }} - ${{ matrix.client }}
+
+    services:
+      redis:
+        image: ${{ matrix.server }}
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Use the matrix Redis client
+        run: npm install --no-save --ignore-scripts ${{ matrix.client }}
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Audit dependencies
+        run: npm audit
+
+      - name: Run tests
+        run: npm test
