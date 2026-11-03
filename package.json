@@ -40,9 +40,9 @@
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
     "@hapi/hapi": "^21.4.12",
-    "@types/node": "^24.0.0",
+    "@types/node": "^26.6.5",
     "ioredis": "^6.0.0",
-    "typescript": "^5.9.0"
+    "typescript": "^7.0.2"
   },
   "homepage": "https://github.com/PerDiemInc/hapi-rate-limitor#readme"
 }
