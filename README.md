@@ -256,6 +256,18 @@ npm run lint
 npm test
 ```
 
+## Releasing
+
+Pushing a version tag publishes to npm, and the tag sets the version:
+
+```sh
+git switch master && git pull
+git tag 5.0.1
+git push origin 5.0.1
+```
+
+The workflow refuses a tag that isn't on `master` or isn't newer than the latest version on npm. It then runs the tests, publishes and creates the GitHub Release. Merging to `master` never publishes.
+
 ## Credits
 
 Written from scratch, with ideas from [hapi-rate-limitor](https://github.com/futurestudio/hapi-rate-limitor) by Future Studio, which this package replaces, and [rate-limiter-flexible](https://github.com/animir/node-rate-limiter-flexible).

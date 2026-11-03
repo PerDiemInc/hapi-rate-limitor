@@ -1,6 +1,7 @@
-# Publishes to npm when a version tag is pushed:
-#   npm version patch
-#   git push origin master --follow-tags
+# Publishes to npm when a version tag is pushed. The tag sets the version:
+#   git switch master && git pull
+#   git tag 5.0.1
+#   git push origin 5.0.1
 #
 # Requires a Trusted Publisher (OIDC) for this repository on npm and an
 # "npm-publish" GitHub environment.
@@ -10,13 +11,41 @@ name: Publish
 on:
   push:
     tags:
-      - "v*"
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: read
 
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.verify.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, to check that the tag is on master.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Check the tag can be released
+        id: verify
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          latest="$(npm view "$(node -p "require('./package.json').name")" version)"
+          version="$(.github/scripts/verify-release.sh "$TAG" "$GITHUB_SHA" "$latest")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: verify
     runs-on: ubuntu-latest
 
     services:
@@ -40,7 +69,7 @@ jobs:
       - run: npm test
 
   publish:
-    needs: test
+    needs: [verify, test]
     runs-on: ubuntu-latest
 
     permissions:
@@ -64,6 +93,12 @@ jobs:
       # Trusted publishing needs npm 11.5.1 or later. This job can publish, so stay on one major.
       - run: npm install -g npm@11
       - run: npm ci --ignore-scripts
+
+      - name: Set the version from the tag
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
       - run: npm publish
 
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
