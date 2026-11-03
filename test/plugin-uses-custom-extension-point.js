@@ -1,6 +1,6 @@
 'use strict'
 
-const Test = require('ava')
+const Test = require('ava').default
 const Hapi = require('@hapi/hapi')
 
 Test.beforeEach('Render view when rate limit is exceeded,', async ({ context }) => {

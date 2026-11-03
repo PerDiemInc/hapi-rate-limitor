@@ -5,3 +5,8 @@ updates:
   schedule:
     interval: weekly
   open-pull-requests-limit: 10
+  groups:
+    # One PR per run: these majors depend on each other, so single-package bumps fail CI.
+    npm-dependencies:
+      patterns:
+        - "*"

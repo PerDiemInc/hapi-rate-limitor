@@ -6,26 +6,27 @@
   "dependencies": {
     "@hapi/boom": "~10.0.1",
     "@supercharge/request-ip": "~1.2.0",
-    "async-ratelimiter": "~1.6.1",
-    "ioredis": "~5.8.0"
+    "async-ratelimiter": "~1.6.11",
+    "ioredis": "~6.0.0"
   },
   "devDependencies": {
     "@hapi/basic": "~7.0.2",
-    "@hapi/hapi": "~21.4.0",
+    "@hapi/hapi": "~21.4.12",
     "@hapi/vision": "~7.0.3",
-    "ava": "~5.3.0",
-    "eslint": "~8.57.0",
-    "eslint-config-standard": "~17.1.0",
-    "eslint-plugin-import": "~2.32.0",
-    "eslint-plugin-node": "~11.1.0",
-    "eslint-plugin-promise": "~6.6.0",
-    "eslint-plugin-standard": "~5.0.0",
-    "handlebars": "~4.7.8",
-    "nyc": "~17.1.0",
-    "p-event": "~4.2.0"
+    "ava": "~8.3.0",
+    "eslint": "~10.14.0",
+    "handlebars": "~4.7.10",
+    "neostandard": "~0.14.1",
+    "nyc": "~18.0.0",
+    "p-event": "~8.0.2"
+  },
+  "ava": {
+    "require": [
+      "./test/helpers/exit-when-done.js"
+    ]
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "homepage": "https://github.com/perdieminc/hapi-rate-limitor#readme",
   "husky": {
@@ -74,9 +75,13 @@
   },
   "scripts": {
     "coverage": "npm test",
-    "lint": "eslint **/*.js",
-    "lint:fix": "eslint **/*.js --fix",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "test": "nyc ava",
     "test:single": "ava --match"
+  },
+  "overrides": {
+    "minimatch": "^11.0.1",
+    "glob": "^14.0.3"
   }
 }

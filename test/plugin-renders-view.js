@@ -1,6 +1,6 @@
 'use strict'
 
-const Test = require('ava')
+const Test = require('ava').default
 const Path = require('path')
 const Hapi = require('@hapi/hapi')
 const Vision = require('@hapi/vision')

@@ -17,7 +17,7 @@ A powerful rate limiting plugin for hapi.js that helps prevent brute-force attac
 
 ## Requirements
 
-- **Node.js**: >= 18
+- **Node.js**: >= 22
 - **hapi**: >= 21
 - **Redis**: A running Redis instance or Redis Cluster
 

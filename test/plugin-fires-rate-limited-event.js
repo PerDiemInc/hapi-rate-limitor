@@ -1,8 +1,8 @@
 'use strict'
 
-const Test = require('ava')
+const Test = require('ava').default
 const Hapi = require('@hapi/hapi')
-const pEvent = require('p-event')
+const { pEvent } = require('p-event')
 const EventEmitter = require('events')
 
 const rejectIn1Sec = new Promise((resolve, reject) => {

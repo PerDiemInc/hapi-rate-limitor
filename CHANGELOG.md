@@ -1,6 +1,18 @@
 # Changelog
 
 
+## Unreleased
+
+### Updated
+- bump `ioredis` from 5.8 to 6.0, `async-ratelimiter` to 1.6.11
+- bump dev dependencies: `ava` 8, `eslint` 10, `nyc` 18, `p-event` 8, `@hapi/hapi` 21.4.12, `handlebars` 4.7.10
+- replace the ESLint 8-only `eslint-config-standard` and its plugins with `neostandard` and a flat config
+- run lint in CI and test against Node.js 22 and 24
+
+### Breaking Changes
+- requires Node.js 22 or later
+- `ioredis` 6 connects with RESP3 by default, which requires Redis 6 or later. Pass `redis: { protocol: 2 }` to keep the previous wire protocol.
+
 ## [4.0.0](https://github.com/futurestudio/hapi-rate-limitor/compare/v3.1.2...v4.0.0) - 2024-03-25
 
 ### Added
