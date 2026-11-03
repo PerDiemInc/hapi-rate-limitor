@@ -9,6 +9,15 @@
 - replace the ESLint 8-only `eslint-config-standard` and its plugins with `neostandard` and a flat config
 - run lint in CI and test against Node.js 22 and 24
 
+### Fixed
+- recognize Redis clients created by a different copy of `ioredis`. They previously failed the `instanceof` check, and the plugin silently connected to localhost instead.
+- fall back to the socket address when `getIp` returns nothing, instead of responding with a 500
+
+### Security
+- publish only `lib` and `typings` to npm
+- pin GitHub Actions to commit SHAs, use least-privilege tokens, and run lint and tests before publishing
+- document client IP spoofing, failed-authentication and per-path limit risks in the README
+
 ### Breaking Changes
 - requires Node.js 22 or later
 - `ioredis` 6 connects with RESP3 by default, which requires Redis 6 or later. Pass `redis: { protocol: 2 }` to keep the previous wire protocol.

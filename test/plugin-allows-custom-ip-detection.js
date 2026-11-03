@@ -75,3 +75,24 @@ Test('falls back to request IP', async (t) => {
   t.is(response.headers['x-rate-limit-remaining'], 9)
   t.truthy(response.headers['x-rate-limit-reset'])
 })
+
+Test('falls back to the socket address when getIp returns nothing', async (t) => {
+  const server = new Hapi.Server()
+
+  await server.register({
+    plugin: require('../lib'),
+    options: {
+      max: 1000,
+      getIp: () => undefined,
+      namespace: `getip-fallback-${Date.now()}`
+    }
+  })
+
+  server.route({ method: 'GET', path: '/', handler: () => 'ok' })
+  await server.initialize()
+
+  const response = await server.inject({ url: '/', remoteAddress: '10.20.30.40' })
+
+  t.is(response.statusCode, 200)
+  t.is(response.headers['x-rate-limit-limit'], 1000)
+})

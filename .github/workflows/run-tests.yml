@@ -14,6 +14,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -26,20 +29,22 @@ jobs:
     name: Node ${{ matrix.node-version }} - Redis ${{ matrix.redis-version }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node-version }}
 
       - name: Start Redis
-        uses: supercharge/redis-github-action@1.1.0
+        uses: supercharge/redis-github-action@bc274cb7238cd63a45029db04ee48c07a72609fd # 1.8.1
         with:
           redis-version: ${{ matrix.redis-version }}
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --ignore-scripts
 
       - name: Lint
         run: npm run lint

@@ -28,6 +28,10 @@
   "engines": {
     "node": ">=22"
   },
+  "files": [
+    "lib",
+    "typings"
+  ],
   "homepage": "https://github.com/perdieminc/hapi-rate-limitor#readme",
   "husky": {
     "hooks": {

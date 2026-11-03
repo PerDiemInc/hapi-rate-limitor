@@ -282,9 +282,9 @@ await server.register({
   options: {
     redis: 'redis://localhost:6379',
     getIp: (request) => {
-      // Custom IP extraction (e.g., behind a proxy)
-      return request.headers['x-real-ip'] ||
-             request.headers['x-forwarded-for']?.split(',')[0] ||
+      // Behind one proxy that appends to X-Forwarded-For, trust only the last entry.
+      // Earlier entries are client-controlled. See "Security Considerations".
+      return request.headers['x-forwarded-for']?.split(',').pop().trim() ||
              request.info.remoteAddress;
     }
   }
@@ -393,6 +393,26 @@ await server.register({
   }
 });
 ```
+
+## Security Considerations
+
+**Client IP detection is spoofable by default.** Without `getIp`, the client IP comes from request headers such as `X-Forwarded-For`, `X-Client-IP` and `X-Real-IP`, using the first valid address. Clients can set these headers themselves, so they can evade IP-based limits by changing the value on each request, or skip limiting altogether by sending an address on `ipWhitelist`. Load balancers that append to `X-Forwarded-For` don't prevent this, because the client's value stays first.
+
+Use `getIp` to read the address your own infrastructure vouches for. For example, behind exactly one proxy that appends to `X-Forwarded-For`:
+
+```js
+getIp: (request) => {
+  const forwardedFor = request.headers['x-forwarded-for']
+
+  return forwardedFor
+    ? forwardedFor.split(',').pop().trim()
+    : request.info.remoteAddress
+}
+```
+
+**Failed authentication isn't rate limited by default.** The default `extensionPoint` is `onPostAuth`, and hapi skips that step when authentication fails, so guessed passwords never count against the limit. To protect credentials from brute force, use `extensionPoint: 'onPreAuth'`. Requests are then limited by IP only, because credentials aren't available yet.
+
+**Route limits apply per concrete path.** A route `/otp/{phone}` with its own `max` gets a separate counter for each `phone` value, so varying the parameter evades the limit and creates one Redis key per value.
 
 ## TypeScript Support
 

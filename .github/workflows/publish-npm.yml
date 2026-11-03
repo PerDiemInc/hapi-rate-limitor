@@ -2,8 +2,9 @@
 #
 # This workflow automatically:
 # 1. Runs when you push a version tag (e.g., v4.0.1, v4.1.0)
-# 2. Publishes the package to npm registry using Trusted Publisher (OIDC)
-# 3. Creates a GitHub Release with auto-generated release notes
+# 2. Runs lint and tests, without any publish credentials
+# 3. Publishes the package to npm registry using Trusted Publisher (OIDC)
+# 4. Creates a GitHub Release with auto-generated release notes
 #
 # How to trigger:
 #   npm version patch  # Bumps version and creates tag
@@ -19,8 +20,43 @@ on:
     tags:
       - "v*" # Triggers on version tags like v4.0.1, v4.1.0, etc.
 
+permissions:
+  contents: read
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.20.0"
+
+      - name: Install dependencies
+        run: npm install --ignore-scripts
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests
+        run: npm test
+        env:
+          CI: true
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
 
     permissions:
@@ -32,21 +68,25 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22.20.0"
           registry-url: "https://registry.npmjs.org"
 
+      # Trusted publishing needs npm 11.5.1 or later. This job can publish, so stay on one major.
       - name: Update npm
-        run: npm install -g npm@latest
+        run: npm install -g npm@11
+
       - name: Publish to NPM
         run: npm publish
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           generate_release_notes: true
           draft: false
