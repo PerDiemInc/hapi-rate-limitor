@@ -1,6 +1,6 @@
 {
   "name": "@perdieminc/hapi-rate-limitor",
-  "version": "4.0.2",
+  "version": "5.0.0",
   "description": "Zero-dependency Redis-backed rate limiting for hapi that keeps your API up when Redis is not",
   "license": "MIT",
   "author": "Per Diem",

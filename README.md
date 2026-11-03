@@ -256,6 +256,10 @@ npm run lint
 npm test
 ```
 
+## Releasing
+
+A merge to `master` publishes to npm when it carries a new version in `package.json`. Bump it in your PR with `npm version patch --no-git-tag-version`, or `minor` or `major`. Merges that leave the version unchanged publish nothing. The workflow runs the tests first, then creates the git tag and GitHub Release.
+
 ## Credits
 
 Written from scratch, with ideas from [hapi-rate-limitor](https://github.com/futurestudio/hapi-rate-limitor) by Future Studio, which this package replaces, and [rate-limiter-flexible](https://github.com/animir/node-rate-limiter-flexible).

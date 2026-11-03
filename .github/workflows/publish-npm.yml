@@ -1,6 +1,9 @@
-# Publishes to npm when a version tag is pushed:
-#   npm version patch
-#   git push origin master --follow-tags
+# Publishes to npm when a merge to master carries a new version in package.json.
+# To release, bump the version in your PR:
+#   npm version patch --no-git-tag-version
+#
+# Merges that leave the version unchanged publish nothing. The workflow creates the
+# git tag and GitHub Release itself.
 #
 # Requires a Trusted Publisher (OIDC) for this repository on npm and an
 # "npm-publish" GitHub environment.
@@ -9,14 +12,50 @@ name: Publish
 
 on:
   push:
-    tags:
-      - "v*"
+    branches:
+      - master
+
+# Two merges in a row must not race to publish.
+concurrency:
+  group: publish-npm
 
 permissions:
   contents: read
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Compare the version with npm
+        id: version
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$(npm view "$name@$version" version 2>/dev/null)" ]; then
+            echo "$name@$version is already on npm, nothing to publish"
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
     runs-on: ubuntu-latest
 
     services:
@@ -40,7 +79,8 @@ jobs:
       - run: npm test
 
   publish:
-    needs: test
+    needs: [check, test]
+    if: needs.check.outputs.publish == 'true'
     runs-on: ubuntu-latest
 
     permissions:
@@ -68,4 +108,6 @@ jobs:
 
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
+          tag_name: v${{ needs.check.outputs.version }}
+          target_commitish: ${{ github.sha }}
           generate_release_notes: true
