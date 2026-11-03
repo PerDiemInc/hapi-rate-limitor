@@ -11,38 +11,113 @@ Rate limiting for [hapi](https://hapi.dev), backed by Redis or Valkey. It has no
 - **Cheap under attack.** Rejected clients are remembered in memory, so a flood doesn't reach Redis.
 - **Works on Redis Cluster.** Keys for one request share a slot, and hostile values can't change the key layout.
 
-## Install
+## Getting started
+
+### 1. Install
 
 ```sh
-npm install @perdieminc/hapi-rate-limitor
+npm install @perdieminc/hapi-rate-limitor ioredis
 ```
 
-You provide the Redis client, so this package doesn't add one to your dependencies. It supports `ioredis` 5 and 6, on Redis 5 or later and on Valkey.
+You need Node.js 22 or later, Redis 5 or later, or Valkey. This package has no dependencies of its own, so you bring the Redis client: `ioredis` 5 or 6.
 
-## Usage
+### 2. Register the plugin
 
 ```js
+const Hapi = require("@hapi/hapi");
 const Redis = require("ioredis");
 const { plugin: rateLimit } = require("@perdieminc/hapi-rate-limitor");
 
-const redis = new Redis(process.env.REDIS_URL, {
-  // Fail straight away during an outage rather than queueing requests.
-  enableOfflineQueue: false,
-  maxRetriesPerRequest: 1,
-});
+const start = async () => {
+  const server = new Hapi.Server({ port: 3000 });
 
-// Without a listener, ioredis logs every reconnect failure to stderr.
-redis.on("error", (error) => logger.warn({ err: error }, "rate limit redis error"));
+  const redis = new Redis(process.env.REDIS_URL, {
+    // Fail straight away during an outage rather than queueing requests.
+    enableOfflineQueue: false,
+    maxRetriesPerRequest: 1,
+  });
 
-await server.register({
-  plugin: rateLimit,
-  options: { redis, max: 120, duration: 60_000 },
-});
+  // Without a listener, ioredis logs every reconnect failure to stderr.
+  redis.on("error", (error) => console.warn("rate limit redis error", error.message));
 
-server.ext("onPostStop", () => redis.quit());
+  await server.register({
+    plugin: rateLimit,
+    options: { redis, max: 120, duration: 60_000, ipSources: [] },
+  });
+
+  server.route({ method: "GET", path: "/", handler: () => "ok" });
+  server.ext("onPostStop", () => redis.disconnect());
+
+  await server.start();
+};
+
+start();
 ```
 
-Use one client for rate limiting, not your application's shared client. Options like `enableOfflineQueue` would otherwise affect the rest of your app.
+Use a client just for rate limiting, not your application's shared one, because these options would affect the rest of your app.
+
+`ipSources: []` uses the connection's address, which is right for trying it locally. **In production, set this to match your proxies**: see [Client IP](#client-ip).
+
+### 3. Check it works
+
+```sh
+curl -i http://localhost:3000/
+```
+
+```
+HTTP/1.1 200 OK
+x-rate-limit-limit: 120
+x-rate-limit-remaining: 119
+x-rate-limit-reset: 1793740425
+```
+
+Once a client is over the limit, it gets a 429 with `Retry-After`:
+
+```json
+{
+  "statusCode": 429,
+  "error": "Too Many Requests",
+  "message": "You have exceeded the request limit"
+}
+```
+
+### 4. Limit a route more tightly
+
+```js
+server.route({
+  method: "POST",
+  path: "/login",
+  options: {
+    plugins: { "hapi-rate-limitor": { max: 5, duration: 60_000 } },
+    handler,
+  },
+});
+```
+
+## Changing how it behaves
+
+Most behaviour comes from the plugin options, and a route can override its limits under `plugins['hapi-rate-limitor']`.
+
+| To change                           | Set                                         | Effect                                                                                                         |
+| ----------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| How many requests are allowed       | `max`, `duration`                           | `max` requests in any `duration` milliseconds                                                                  |
+| One route's limit                   | Route `max`, `duration`                     | That route gets its own counter per client                                                                     |
+| How clients are identified          | `ipSources` or `getIp`                      | Which address counts as the client. See [Client IP](#client-ip)                                                |
+| Who counts as one user              | `userAttribute`                             | Logged-in users are counted by this credentials property, across IPs                                           |
+| A particular user's limit           | `userLimitAttribute`                        | Reads that user's own `max` from their credentials                                                             |
+| Counting by phone, store or similar | Route `limits` with `by`                    | See [Stopping SMS pumping](#stopping-sms-pumping)                                                              |
+| Counters per URL or per tenant      | `getRouteKey`                               | A route with its own limit normally has one counter across all parameter values                                |
+| Punishing abuse                     | `blockMs`                                   | Once over the limit, keep rejecting for this long                                                              |
+| Clients that keep retrying          | `countRejected`                             | Rejected requests count too, so the client stays limited until it backs off. This turns the shield off         |
+| Failed logins                       | `authFailures`                              | See [Failed logins](#failed-logins)                                                                            |
+| Rejecting before authentication     | `earlyLimit`                                | See [Rejecting before the expensive work](#rejecting-before-the-expensive-work)                                |
+| When limits run                     | `extensionPoint`                            | `onPostAuth` by default. Later steps can see validated input. Earlier ones save work but can't see credentials |
+| Who's exempt                        | `allowlist`, `skip`, route `enabled: false` | These requests aren't counted and get no rate limit headers                                                    |
+| The rejection response              | `onExceeded`                                | Return your own response, or a Boom error                                                                      |
+| What happens if Redis fails         | `onStoreError`, `storeTimeoutMs`            | See [When Redis is unavailable](#when-redis-is-unavailable)                                                    |
+| Redis key prefix                    | `namespace`                                 | Keeps apps sharing a Redis apart                                                                               |
+
+**Which limit wins:** a route's `limits`, then a route's `max`, then the user's own limit, then the plugin's `max`.
 
 ## Route limits
 
@@ -88,9 +163,9 @@ IP limits alone don't stop SMS pumping, because attackers rotate through many IP
 }
 ```
 
-`by` values are hashed before they reach Redis, so phone numbers and emails aren't stored. A missing value counts by client, so it can't skip the limit. The payload is parsed by `onPostAuth`, so don't combine `by` on payload fields with an earlier `extensionPoint`.
+`by` values are hashed before they reach Redis, so phone numbers and emails aren't stored in plain text. A hash of a phone number can still be brute forced, so treat a Redis dump as sensitive. A missing value counts by client, so it can't skip the limit. The payload is parsed by `onPostAuth`, so don't combine `by` on payload fields with an earlier `extensionPoint`.
 
-Use `by` only on values that are validated, or that clients can't invent freely. Each distinct value creates a Redis key until its window ends. On Redis Cluster, a route using `by` keeps all its counters on one slot.
+The default `onPostAuth` step runs before hapi validates the payload, so raw client input reaches `by`. Use `extensionPoint: 'onPreHandler'` when `by` reads the payload. Use `by` only on values clients can't invent freely. Each distinct value creates a Redis key until its window ends. On Redis Cluster, a route using `by` keeps all its counters on one slot.
 
 ### Counting real sends
 
@@ -169,7 +244,67 @@ Hop counts must be exact. Too low and clients share the proxy's limit; too high 
 
 IPv6 clients are counted per /64, because one customer usually controls a whole /64.
 
-## When Redis is unavailable
+## How it uses Redis
+
+### What it stores
+
+Each counter is a sorted set holding one entry per request in the current window. The score is the time from Redis' clock, and the member is a unique ID:
+
+```
+ZRANGE rate-limit:{ip%3A203.0.113.7}:global:0:ip%3A203.0.113.7 0 -1 WITHSCORES
+1) "7bd7e6b0327880b9:2"
+2) "1793740364613"
+```
+
+| Counter               | Example key                                                                      |
+| --------------------- | -------------------------------------------------------------------------------- |
+| Plugin-wide limit     | `rate-limit:{ip%3A203.0.113.7}:global:0:ip%3A203.0.113.7`                        |
+| Route's own limit     | `rate-limit:{ip%3A203.0.113.7}:post%3A/login:0:ip%3A203.0.113.7`                 |
+| Limit counted by `by` | `rate-limit:{post%3A/otp}:post%3A/otp:1:by:<sha256>`                             |
+| Failed logins         | `rate-limit:{ip%3A203.0.113.7}:auth-failures%3Apost%3A/login:0:ip%3A203.0.113.7` |
+| `earlyLimit`          | `rate-limit:{ip%3A203.0.113.7}:early:0:ip%3A203.0.113.7`                         |
+| `consume`             | `rate-limit:{event:<sha256>}:0`                                                  |
+| `blockMs` block       | The limit's key plus `:blocked`, a plain string                                  |
+
+The part in `{}` is a Redis hash tag. It keeps all of a request's keys on one cluster slot. `%` and `:` inside key parts are encoded, and values that are very long or contain `{`, `}` or whitespace are hashed.
+
+### What it runs
+
+Each counted request runs one Lua script, loaded with `EVAL` the first time and `EVALSHA` afterwards. The script is atomic, so concurrent requests can't exceed `max`, and a request with several limits is counted by all of them or none. Inside, it uses `TIME`, `ZREMRANGEBYSCORE`, `ZCARD`, `PTTL`, `ZADD`, `ZREMRANGEBYRANK`, `PEXPIRE`, `ZRANGE` and, for blocks, `SET`.
+
+If your Redis user has an ACL, it needs those commands plus `EVAL` and `EVALSHA`.
+
+### Memory and expiry
+
+- **Expiry:** every counter expires `duration` after its latest counted request, and blocks expire after `blockMs`, so abandoned clients cost nothing and you never need a cleanup job.
+- **Size:** a counter holds at most `max` entries, even under attack. For scale, a key with 2 entries used 151 bytes on Redis. Estimate your peak as active clients times their entries.
+- **Rejected clients:** with the shield on, each server remembers rejected clients in memory until their retry time, so a flood doesn't reach Redis.
+- **Connections:** the plugin uses only the client you pass and never connects or closes it.
+
+### AWS ElastiCache and Valkey
+
+Valkey works the same as Redis, on a standalone node or in cluster mode. AWS endpoints usually need TLS, and cluster mode needs one extra option:
+
+```js
+// Standalone or a replication group's primary endpoint
+const redis = new Redis(process.env.VALKEY_URL, {
+  // rediss://host:6379
+  enableOfflineQueue: false,
+  maxRetriesPerRequest: 1,
+});
+
+// Cluster mode, including ElastiCache Serverless
+const redis = new Redis.Cluster([{ host: process.env.VALKEY_HOST, port: 6379 }], {
+  // AWS certificates match the hostname, so don't resolve it to an IP first.
+  dnsLookup: (address, callback) => callback(null, address),
+  enableOfflineQueue: false,
+  redisOptions: { tls: {}, maxRetriesPerRequest: 1 },
+});
+```
+
+Use the primary endpoint, not a reader endpoint, because counting writes to Redis.
+
+### When Redis is unavailable
 
 | `onStoreError`    | Behaviour                                    | Use for                               |
 | ----------------- | -------------------------------------------- | ------------------------------------- |
