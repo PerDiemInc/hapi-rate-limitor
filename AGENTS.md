@@ -16,6 +16,8 @@ git push origin 5.0.1
 - Tags look like `5.0.1` or `v5.0.1`. Other tags don't trigger the workflow, including `5.0.1-beta.1`.
 - `.github/workflows/publish-npm.yml` refuses a tag that isn't on `master` or isn't newer than npm's latest version. It then runs lint, audit and tests before publishing, and creates the GitHub Release.
 - Merging to `master` never publishes.
+- The publish step waits for approval from a reviewer on the `npm-publish` environment, or an admin. Don't approve it unless asked.
+- If the publish succeeded but the GitHub Release step failed, don't re-run: the version already exists on npm. Create the release by hand.
 - Add the release to `CHANGELOG.md` in a PR before tagging.
 - A published version can't be reused. Ship fixes as a new version.
 
