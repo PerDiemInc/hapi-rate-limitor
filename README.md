@@ -258,7 +258,15 @@ npm test
 
 ## Releasing
 
-A merge to `master` publishes to npm when it carries a new version in `package.json`. Bump it in your PR with `npm version patch --no-git-tag-version`, or `minor` or `major`. Merges that leave the version unchanged publish nothing. The workflow runs the tests first, then creates the git tag and GitHub Release.
+Pushing a version tag publishes to npm, and the tag sets the version:
+
+```sh
+git switch master && git pull
+git tag 5.0.1
+git push origin 5.0.1
+```
+
+The workflow refuses a tag that isn't on `master` or isn't newer than the latest version on npm. It then runs the tests, publishes and creates the GitHub Release. Merging to `master` never publishes.
 
 ## Credits
 
