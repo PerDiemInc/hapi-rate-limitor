@@ -266,7 +266,7 @@ git tag 5.0.1
 git push origin 5.0.1
 ```
 
-The workflow refuses a tag that isn't on `master` or isn't newer than the latest version on npm. It then runs the tests, publishes and creates the GitHub Release. Merging to `master` never publishes.
+The workflow refuses a tag that isn't on `master` or isn't newer than the latest version on npm. It then runs the tests and waits for a reviewer or admin to approve publishing, before publishing and creating the GitHub Release. Merging to `master` never publishes.
 
 ## Credits
 
