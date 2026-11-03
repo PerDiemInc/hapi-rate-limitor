@@ -29,6 +29,7 @@ import type {
   RouteOptions,
 } from "./types";
 
+export { StoreUnavailableError } from "./limiter";
 export type * from "./types";
 
 declare module "@hapi/hapi" {
@@ -46,6 +47,7 @@ const EVENTS = {
 
 const MAX_IDENTITY_LENGTH = 128;
 const DEFAULT_MAX = 60;
+const DEFAULT_ROUTE_OPTION_KEY = "hapi-rate-limitor";
 const DEFAULT_DURATION_MS = 60_000;
 const DEFAULT_STORE_TIMEOUT_MS = 250;
 const DEFAULT_AUTH_FAILURE_CODES = [401];
@@ -149,14 +151,40 @@ function errorResponse(
 }
 
 const register = async (server: Server, options: PluginOptions): Promise<void> => {
+  // Validated even when disabled, so test runs with the limiter off still catch bad options.
+  assertPluginOptions(options ?? {});
+
+  const validateRoutes = (routeOptionKey: string, defaultLimit: Limit): void => {
+    server.ext("onPreStart", async () => {
+      for (const route of server.table()) {
+        const routeOptions = (route.settings.plugins as Record<string, RouteOptions | undefined>)[
+          routeOptionKey
+        ];
+
+        if (routeOptions) {
+          assertRouteOptions(routeOptions, `route ${route.path}`, defaultLimit);
+        }
+      }
+    });
+  };
+
+  const defaultLimit: Limit = {
+    max: options?.max ?? DEFAULT_MAX,
+    duration: options?.duration ?? DEFAULT_DURATION_MS,
+    blockMs: options?.blockMs,
+    countRejected: options?.countRejected,
+  };
+
+  validateRoutes(options?.routeOptionKey ?? DEFAULT_ROUTE_OPTION_KEY, defaultLimit);
+
+  const allowedIps = buildAllowlist(options?.allowlist ?? []);
+
   if (options?.enabled === false) {
     // Callers of `consume` shouldn't need to know whether the plugin is on.
     server.expose("consume", async () => null);
 
     return;
   }
-
-  assertPluginOptions(options ?? {});
 
   if (!isRedisClient(options?.redis)) {
     throw new Error("hapi-rate-limitor: redis must be an ioredis client or cluster");
@@ -168,7 +196,7 @@ const register = async (server: Server, options: PluginOptions): Promise<void> =
     extensionPoint = "onPostAuth",
     userAttribute = "id",
     userLimitAttribute = "rateLimit",
-    routeOptionKey = "hapi-rate-limitor",
+    routeOptionKey = DEFAULT_ROUTE_OPTION_KEY,
     ipSources = DEFAULT_IP_SOURCES,
     getIp,
     allowlist = [],
@@ -182,15 +210,6 @@ const register = async (server: Server, options: PluginOptions): Promise<void> =
     authFailures: defaultAuthFailures,
     earlyLimit,
   } = options;
-
-  const defaultLimit: Limit = {
-    max: options.max ?? DEFAULT_MAX,
-    duration: options.duration ?? DEFAULT_DURATION_MS,
-    blockMs: options.blockMs,
-    countRejected: options.countRejected,
-  };
-
-  const allowedIps = buildAllowlist(allowlist);
 
   if (allowlist.length > 0 && !getIp && ipSources.some((source) => !source.when)) {
     server.log(
@@ -303,7 +322,8 @@ const register = async (server: Server, options: PluginOptions): Promise<void> =
     return Promise.all(
       limits.map(async (limit, index) => {
         const value = await limit.by?.(request);
-        const hasValue = value !== undefined && value !== null && value !== "";
+        // Raw input can reach here, and objects would otherwise all share one counter.
+        const hasValue = (typeof value === "string" && value !== "") || typeof value === "number";
         // Hashed, because these values are often phone numbers or emails.
         const subject = hasValue ? `by:${sha256(String(value))}` : safeKeyPart(identity);
         const logKey = `${namespace}:{${tag}}:${safeScope}:${index}:${subject}`;
@@ -382,9 +402,15 @@ const register = async (server: Server, options: PluginOptions): Promise<void> =
 
   const handle: Lifecycle.Method = async (request, h) => {
     const route = routeOptionsOf(request);
+
+    // Checked first, so a failing resolver can't take down a health check.
+    if (route.enabled === false) {
+      return h.continue;
+    }
+
     const ip = await clientIp(request);
 
-    if (route.enabled === false || (await isExempt(request, ip))) {
+    if (await isExempt(request, ip)) {
       return h.continue;
     }
 
@@ -417,13 +443,14 @@ const register = async (server: Server, options: PluginOptions): Promise<void> =
     if (onExceeded) {
       const response = (await onExceeded(request, h, request.rateLimit)) as unknown as
         | (ResponseObject & { isBoom?: boolean })
-        | Error;
+        | Error
+        | undefined;
 
-      if ((response as { isBoom?: boolean }).isBoom) {
+      if ((response as { isBoom?: boolean } | undefined)?.isBoom) {
         throw response;
       }
 
-      return typeof (response as ResponseObject).takeover === "function"
+      return typeof (response as ResponseObject | undefined)?.takeover === "function"
         ? (response as ResponseObject).takeover()
         : h
             .response(response as never)
@@ -471,18 +498,6 @@ const register = async (server: Server, options: PluginOptions): Promise<void> =
   };
 
   server.expose("consume", consume);
-
-  server.ext("onPreStart", async () => {
-    for (const route of server.table()) {
-      const routeOptions = (route.settings.plugins as Record<string, RouteOptions | undefined>)[
-        routeOptionKey
-      ];
-
-      if (routeOptions) {
-        assertRouteOptions(routeOptions, `route ${route.path}`, defaultLimit);
-      }
-    }
-  });
 
   if (earlyLimit) {
     server.ext("onRequest", async (request, h) => {

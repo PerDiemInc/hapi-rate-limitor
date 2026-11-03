@@ -403,3 +403,62 @@ test("sequential limits hold under real parallel load", async () => {
 
   assert.equal(responses.filter((response) => response.statusCode === 200).length, 10);
 });
+
+test("a disabled plugin still rejects bad options and route limits", async () => {
+  const badOptions = new Hapi.Server();
+
+  await assert.rejects(
+    badOptions.register({ plugin, options: { enabled: false, max: 0 } }),
+    /hapi-rate-limitor/,
+  );
+
+  const badAllowlist = new Hapi.Server();
+
+  await assert.rejects(
+    badAllowlist.register({ plugin, options: { enabled: false, allowlist: ["10.0.0.0/"] } }),
+    /allowlist/,
+  );
+
+  await assert.rejects(
+    createServer({ enabled: false }, [limited({ max: 0 })]),
+    /hapi-rate-limitor: route/,
+  );
+});
+
+test("a failing IP resolver cannot break a route with limiting turned off", async () => {
+  const server = await createServer(
+    {
+      redis,
+      getIp: () => {
+        throw new Error("resolver bug");
+      },
+    },
+    [limited({ enabled: false })],
+  );
+
+  assert.equal((await server.inject("/")).statusCode, 200);
+});
+
+test("onExceeded returning nothing still rejects with a 429", async () => {
+  const server = await createServer({ redis, max: 1, onExceeded: () => undefined });
+
+  await server.inject("/");
+  assert.equal((await server.inject("/")).statusCode, 429);
+});
+
+test("exports the store error, so callers of consume can recognize it", async () => {
+  const { StoreUnavailableError } = require("../dist");
+  const down = {
+    defineCommand() {},
+    perdiemHapiRateLimit: () => Promise.reject(new Error("down")),
+  };
+  const server = await createServer({ redis: down, onStoreError: "closed" });
+
+  await assert.rejects(
+    server.plugins["hapi-rate-limitor"].consume({
+      key: "a",
+      limits: [{ max: 1, duration: 1000 }],
+    }),
+    StoreUnavailableError,
+  );
+});
