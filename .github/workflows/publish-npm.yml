@@ -3,8 +3,8 @@
 #   git tag 5.0.1
 #   git push origin 5.0.1
 #
-# Requires a Trusted Publisher (OIDC) for this repository on npm and an
-# "npm-publish" GitHub environment.
+# The publish job waits for approval from a reviewer on the "npm-publish" GitHub
+# environment, or an admin. Requires a Trusted Publisher (OIDC) for this repository on npm.
 
 name: Publish
 
@@ -68,6 +68,21 @@ jobs:
       - run: npm audit
       - run: npm test
 
+      - name: Set the version from the tag
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+
+      # Packed here, because the publish job must not run any dependency's code.
+      - run: npm pack
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package
+          path: "*.tgz"
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     needs: [verify, test]
     runs-on: ubuntu-latest
@@ -81,25 +96,20 @@ jobs:
       url: https://www.npmjs.com/package/@perdieminc/hapi-rate-limitor
 
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           registry-url: "https://registry.npmjs.org"
 
-      # Trusted publishing needs npm 11.5.1 or later. This job can publish, so stay on one major.
-      - run: npm install -g npm@11
-      - run: npm ci --ignore-scripts
+      # Trusted publishing needs npm 11.5.1 or later. Pinned, because this job can publish.
+      - run: npm install -g npm@11.21.1 --ignore-scripts
 
-      - name: Set the version from the tag
-        env:
-          VERSION: ${{ needs.verify.outputs.version }}
-        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package
 
-      - run: npm publish
+      # The tarball the test job built. Nothing is installed or built with publish rights.
+      - run: npm publish ./*.tgz --ignore-scripts
 
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
