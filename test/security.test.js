@@ -552,3 +552,23 @@ test("key parts are encoded, so different values never share a counter", async (
   assert.ok(keys.some((key) => key.includes(":x%3Ay:")));
   assert.ok(keys.some((key) => key.includes(":x%253Ay:")));
 });
+
+test("non-text by values can't all share one counter", async () => {
+  const server = await createServer({ redis, extensionPoint: "onPostAuth" }, [
+    postLimited({
+      limits: [{ max: 1, duration: 60_000, by: (request) => request.payload?.phone }],
+    }),
+  ]);
+  const hostile = (remoteAddress, phone) => ({
+    method: "POST",
+    url: "/send",
+    payload: { phone },
+    remoteAddress,
+  });
+
+  // Each client gets its own counter instead of exhausting a shared "[object Object]" one.
+  assert.equal((await server.inject(hostile("90.0.0.1", {}))).statusCode, 200);
+  assert.equal((await server.inject(hostile("90.0.0.2", {}))).statusCode, 200);
+  assert.equal((await server.inject(hostile("90.0.0.3", ["x"]))).statusCode, 200);
+  assert.equal((await server.inject(hostile("90.0.0.1", {}))).statusCode, 429);
+});
