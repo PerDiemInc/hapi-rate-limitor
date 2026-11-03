@@ -68,6 +68,23 @@ Test('falls back to the socket address for too few or invalid entries', async (t
   await server.stop()
 })
 
+for (const [entry, expected] of [['1.1.1.1:5678', '1.1.1.1'], ['::ffff:1.1.1.1', '1.1.1.1'], ['[2001:db8::1]:5678', '2001:db8::1']]) {
+  Test(`reads ${entry} from the trusted entry`, async (t) => {
+    const server = await createServer({ trustedProxyHops: 1, ipWhitelist: [expected] })
+
+    t.is((await get(server, entry)).headers['x-rate-limit-limit'], undefined)
+
+    await server.stop()
+  })
+}
+
+Test('clients without any address share one limit instead of failing', async (t) => {
+  const RateLimiter = require('../lib/rate-limiter')
+  const limiter = new RateLimiter(new Hapi.Server(), {})
+
+  t.is(await limiter.ip({ headers: {}, info: {} }), 'unknown')
+})
+
 for (const trustedProxyHops of [-1, 1.5, '1']) {
   Test(`rejects trustedProxyHops of ${JSON.stringify(trustedProxyHops)}`, async (t) => {
     const server = new Hapi.Server()

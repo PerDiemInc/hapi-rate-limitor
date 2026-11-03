@@ -380,16 +380,13 @@ await server.register({
     namespace: 'my-app-rate-limiter',
     userAttribute: 'userId',
     userLimitAttribute: 'maxRequests',
-    ipWhitelist: ['127.0.0.1', '::1'],
+    ipWhitelist: ['203.0.113.10'],
     extensionPoint: 'onPostAuth',
     view: 'rate-limit-exceeded',
     skip: (request) => {
       return request.path.startsWith('/public');
     },
-    getIp: (request) => {
-      return request.headers['x-forwarded-for']?.split(',')[0] ||
-             request.info.remoteAddress;
-    }
+    trustedProxyHops: 1
   }
 });
 ```
@@ -406,14 +403,22 @@ trustedProxyHops: 1
 trustedProxyHops: 2
 ```
 
-If your proxies don't follow this pattern, use `getIp` to read the address your infrastructure vouches for. Never read the first `X-Forwarded-For` entry: it's client-controlled.
+Before setting it, check that:
+
+- **Clients can only reach the server through those proxies.** A client connecting directly can send any `X-Forwarded-For` value.
+- **The count is exact.** Too low and clients share the proxy's limit or get keyed on the wrong address. Too high and clients can choose their own key.
+- **`ipWhitelist` doesn't contain your proxy's address when `trustedProxyHops` is `0`.** Every request then comes from a whitelisted address, which turns rate limiting off for everyone.
+
+An entry that isn't a valid IP falls back to the socket address. If your proxies don't follow this pattern, use `getIp` to read the address your infrastructure vouches for. Never read the first `X-Forwarded-For` entry: it's client-controlled.
+
+**IPv6 clients are counted per address.** A client with a whole IPv6 range can use a new address for each request. To limit by network instead, use `getIp` to return the address's prefix.
 
 **Failed authentication isn't rate limited by default.** The default `extensionPoint` is `onPostAuth`, and hapi skips that step when authentication fails, so guessed passwords never count against the limit. To protect credentials from brute force, use `extensionPoint: 'onPreAuth'`. Requests are then limited by IP only, because credentials aren't available yet.
 
-**Route limits apply per route, across all parameter values.** A route `/stores/{store_id}/otp` with its own `max` has one counter per client across every `store_id`. To count per tenant or per URL instead, use `getRouteId`. Only do this for parameters clients can't vary freely, because each value gets its own counter and Redis key:
+**Route limits apply per route and method, across all parameter values.** A route `/stores/{store_id}/otp` with its own `max` has one counter per client across every `store_id`. To count per tenant or per URL instead, use `getRouteId`. Only do this for parameters clients can't vary freely, because each value gets its own counter and Redis key:
 
 ```js
-getRouteId: (request) => `${request.params.store_id}:${request.route.path}`
+getRouteId: (request) => `${request.params.store_id}:${request.method}:${request.route.path}`
 ```
 
 ## TypeScript Support
@@ -470,7 +475,6 @@ For changes that could benefit the broader community, consider contributing to t
 This plugin uses:
 - [ioredis](https://github.com/luin/ioredis) for Redis connectivity
 - [async-ratelimiter](https://github.com/microlinkhq/async-ratelimiter) for rate limiting logic
-- [@supercharge/request-ip](https://github.com/supercharge/request-ip) for IP detection
 
 ---
 

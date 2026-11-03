@@ -20,8 +20,8 @@
 
 ### Breaking Changes
 - requires Node.js 22 or later
-- client IP detection ignores forwarding headers by default, so spoofed headers can't evade limits or match `ipWhitelist`. **Behind a load balancer, set `trustedProxyHops` or all clients share one limit.** `@supercharge/request-ip` is removed.
-- route-specific limits count per route instead of per URL, so `/otp/1` and `/otp/2` share a counter. Use `getRouteId` to change this.
+- client IP detection ignores forwarding headers by default, so spoofed headers can't evade limits or match `ipWhitelist`. **Behind a load balancer, set `trustedProxyHops` or all clients share one limit. If the load balancer's address is on `ipWhitelist`, rate limiting turns off for everyone.** `@supercharge/request-ip` is removed.
+- route-specific limits count per route and method instead of per URL, so `/otp/1` and `/otp/2` share a counter. Use `getRouteId` to change this.
 - Redis keys written by `async-ratelimiter` before 1.6 store timestamps in a different unit. If you upgrade from `hapi-rate-limitor` 4.0.0, change `namespace` so old and new entries don't mix.
 
 ### Added

@@ -49,6 +49,14 @@ Test('connects with RESP2 and fast retries, and keeps the given options untouche
   t.deepEqual(redis, { host: 'localhost' })
 })
 
+Test('rejects a null Redis option instead of connecting to localhost', async (t) => {
+  const server = new Hapi.Server()
+
+  await t.throwsAsync(
+    server.register({ plugin: require('../lib'), options: { redis: null } })
+  )
+})
+
 Test('lets callers override the connection defaults', (t) => {
   const RateLimiter = require('../lib/rate-limiter')
   const retryStrategy = () => 1
