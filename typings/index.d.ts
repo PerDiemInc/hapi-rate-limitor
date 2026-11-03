@@ -129,7 +129,21 @@ declare namespace HapiRateLimitor {
          * addresses (e.g. Heroku and AWS ELB).
          *
          */
-        getIp?(request: Request): Promise<string>;
+        getIp?(request: Request): Promise<string> | string;
+
+        /**
+         * The number of trusted proxies in front of the server that append to `X-Forwarded-For`.
+         * The default `0` uses the socket address and ignores forwarding headers.
+         *
+         */
+        trustedProxyHops?: number;
+
+        /**
+         * A function with the signature `async (request)` to determine the identifier for
+         * route-specific limits. Defaults to the route's path template, like `/otp/{phone}`.
+         *
+         */
+        getRouteId?(request: Request): Promise<string> | string;
 
         /**
          * an event emitter instance used to emit the

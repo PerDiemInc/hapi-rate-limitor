@@ -151,6 +151,8 @@ await server.register({
 | `view` | String | `undefined` | Path to custom view for rate limit exceeded |
 | `skip` | Function | `() => false` | Function to skip rate limiting for specific requests |
 | `getIp` | Function | `undefined` | Custom function to extract IP address |
+| `trustedProxyHops` | Number | `0` | Number of trusted proxies appending to `X-Forwarded-For`. `0` uses the socket address |
+| `getRouteId` | Function | `undefined` | Custom identifier for route-specific limits. Defaults to the route's path template |
 
 ## Usage Examples
 
@@ -282,10 +284,8 @@ await server.register({
   options: {
     redis: 'redis://localhost:6379',
     getIp: (request) => {
-      // Behind one proxy that appends to X-Forwarded-For, trust only the last entry.
-      // Earlier entries are client-controlled. See "Security Considerations".
-      return request.headers['x-forwarded-for']?.split(',').pop().trim() ||
-             request.info.remoteAddress;
+      // Read the address your infrastructure vouches for. See "Security Considerations".
+      return request.headers['cf-connecting-ip'] || request.info.remoteAddress;
     }
   }
 });
@@ -396,23 +396,25 @@ await server.register({
 
 ## Security Considerations
 
-**Client IP detection is spoofable by default.** Without `getIp`, the client IP comes from request headers such as `X-Forwarded-For`, `X-Client-IP` and `X-Real-IP`, using the first valid address. Clients can set these headers themselves, so they can evade IP-based limits by changing the value on each request, or skip limiting altogether by sending an address on `ipWhitelist`. Load balancers that append to `X-Forwarded-For` don't prevent this, because the client's value stays first.
-
-Use `getIp` to read the address your own infrastructure vouches for. For example, behind exactly one proxy that appends to `X-Forwarded-For`:
+**Client IP detection ignores forwarding headers by default.** Clients can set `X-Forwarded-For` themselves, so the plugin uses the socket address unless you opt in. Behind a load balancer, the socket address is the load balancer, so all clients share one limit until you set `trustedProxyHops` to the number of proxies that append to `X-Forwarded-For`:
 
 ```js
-getIp: (request) => {
-  const forwardedFor = request.headers['x-forwarded-for']
+// One AWS ALB in front of the server
+trustedProxyHops: 1
 
-  return forwardedFor
-    ? forwardedFor.split(',').pop().trim()
-    : request.info.remoteAddress
-}
+// CloudFront in front of an ALB
+trustedProxyHops: 2
 ```
+
+If your proxies don't follow this pattern, use `getIp` to read the address your infrastructure vouches for. Never read the first `X-Forwarded-For` entry: it's client-controlled.
 
 **Failed authentication isn't rate limited by default.** The default `extensionPoint` is `onPostAuth`, and hapi skips that step when authentication fails, so guessed passwords never count against the limit. To protect credentials from brute force, use `extensionPoint: 'onPreAuth'`. Requests are then limited by IP only, because credentials aren't available yet.
 
-**Route limits apply per concrete path.** A route `/otp/{phone}` with its own `max` gets a separate counter for each `phone` value, so varying the parameter evades the limit and creates one Redis key per value.
+**Route limits apply per route, across all parameter values.** A route `/stores/{store_id}/otp` with its own `max` has one counter per client across every `store_id`. To count per tenant or per URL instead, use `getRouteId`. Only do this for parameters clients can't vary freely, because each value gets its own counter and Redis key:
+
+```js
+getRouteId: (request) => `${request.params.store_id}:${request.route.path}`
+```
 
 ## TypeScript Support
 

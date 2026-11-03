@@ -20,7 +20,12 @@
 
 ### Breaking Changes
 - requires Node.js 22 or later
-- `ioredis` 6 connects with RESP3 by default, which requires Redis 6 or later. Pass `redis: { protocol: 2 }` to keep the previous wire protocol.
+- client IP detection ignores forwarding headers by default, so spoofed headers can't evade limits or match `ipWhitelist`. **Behind a load balancer, set `trustedProxyHops` or all clients share one limit.** `@supercharge/request-ip` is removed.
+- route-specific limits count per route instead of per URL, so `/otp/1` and `/otp/2` share a counter. Use `getRouteId` to change this.
+- Redis keys written by `async-ratelimiter` before 1.6 store timestamps in a different unit. If you upgrade from `hapi-rate-limitor` 4.0.0, change `namespace` so old and new entries don't mix.
+
+### Added
+- `trustedProxyHops` and `getRouteId` options
 
 ## [4.0.0](https://github.com/futurestudio/hapi-rate-limitor/compare/v3.1.2...v4.0.0) - 2024-03-25
 

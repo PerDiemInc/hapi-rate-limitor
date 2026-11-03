@@ -44,9 +44,7 @@ Test('succeeds requests with different IP addresses and sends rate limit respons
   const first = {
     url: '/',
     method: 'GET',
-    headers: {
-      'X-Client-IP': '1.2.3.4'
-    }
+    remoteAddress: '1.2.3.4'
   }
 
   const response1 = await t.context.server.inject(first)
@@ -58,9 +56,7 @@ Test('succeeds requests with different IP addresses and sends rate limit respons
   const second = {
     url: '/',
     method: 'GET',
-    headers: {
-      'X-Client-IP': '9.8.7.6'
-    }
+    remoteAddress: '9.8.7.6'
   }
 
   const response2 = await t.context.server.inject(second)

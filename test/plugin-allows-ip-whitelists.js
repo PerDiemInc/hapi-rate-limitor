@@ -11,6 +11,7 @@ Test.beforeEach('Use route-specific rate limit,', async ({ context }) => {
     options: {
       max: 10,
       ipWhitelist: ['1.1.1.1'],
+      trustedProxyHops: 1,
       namespace: `ip-whitelist-${Date.now()}`
     }
   })

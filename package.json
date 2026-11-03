@@ -5,7 +5,6 @@
   "author": "Marcus Pöhls <marcus@futurestud.io>",
   "dependencies": {
     "@hapi/boom": "~10.0.1",
-    "@supercharge/request-ip": "~1.2.0",
     "async-ratelimiter": "~1.6.11",
     "ioredis": "~6.0.0"
   },
