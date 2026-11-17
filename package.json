@@ -38,7 +38,7 @@
     "@hapi/hapi": "^21.0.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.6.4",
+    "@biomejs/biome": "2.6.6",
     "@hapi/hapi": "^21.4.12",
     "@types/node": "^26.6.5",
     "ioredis": "^6.0.0",
